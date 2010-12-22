@@ -1,3 +1,7 @@
+#MYSQL
+
+# Author: Spencer Bliven
+#
 # Clustering procedures
 # Called from alig (production) or aligTest (testing) databases
 

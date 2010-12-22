@@ -1,5 +1,10 @@
+#MYSQL
+
+# Author: Spencer Bliven
+#
 # Generates test data for all vs all clustering
 # Always uses the aligTest database, to avoid overwriting real data
+
 CREATE DATABASE IF NOT EXISTS aligTest;
 USE aligTest;
 
