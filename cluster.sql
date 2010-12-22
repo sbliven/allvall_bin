@@ -124,6 +124,8 @@ BEGIN
     
     # insert pairs whose name1 appears in a cluster
     # convert pairs to use representatives for name1 and name2
+    
+    
     INSERT IGNORE INTO clustered_pair (id, name1, name2, probability)
         SELECT pair.id, cluster1.repr, IF(cluster2.repr IS NULL, pair.name2, cluster2.repr), pair.probability
         FROM pair
@@ -332,11 +334,15 @@ DROP PROCEDURE IF EXISTS main;
 DELIMITER //
 CREATE PROCEDURE main(maxComponents INT, maxPval FLOAT)
 BEGIN
+    DECLARE startTime DATETIME;
+    DECLARE endTime DATETIME;
+    
     DROP TABLE IF EXISTS report;
     CREATE TABLE report (
         pVal FLOAT,
         numClusters INT,
-        numEdges INT
+        numEdges INT,
+        runTime TIME
     );
 
 
@@ -346,13 +352,15 @@ BEGIN
     SET @numClusters = maxComponents;
     SET @numEdges = maxComponents;
     WHILE @numClusters + @numEdges > maxComponents AND @pVal <= 1 DO
+        SELECT NOW() INTO startTime;
         CALL cluster(@pVal);
-        
+        SELECT NOW() INTO endTime;
+
         SELECT count(*) FROM cluster WHERE name = repr INTO @numClusters;
         SELECT count(*) FROM clustered_pair INTO @numEdges;
         
         #Output statistics
-        INSERT INTO report VALUES ( @pVal, @numClusters, @numEdges );
+        INSERT INTO report VALUES ( @pVal, @numClusters, @numEdges, TIMEDIFF( endTime, startTime) );
 
         # Report unclustered, probability = 0, and then probability <= e^-i for i=1,2,...
         CASE
