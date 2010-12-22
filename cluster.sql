@@ -122,42 +122,39 @@ DELIMITER //
 CREATE PROCEDURE expandCluster()
 BEGIN
     
-    # insert pairs whose name1 appears in a cluster
-    # convert pairs to use representatives for name1 and name2
+    # Expand nodes by one degree
+    #TODO Could this give incorrect size=1? Probably consistent if input is consistent (eg all repr in cluster have a name=repr row)
+    INSERT IGNORE INTO cluster (name, repr)
+        (SELECT pair.name2, pair.name2
+            FROM pair
+            JOIN cluster as cluster1
+            ON cluster1.name = pair.name1
+            LEFT JOIN cluster as cluster2
+            ON cluster2.name = pair.name2
+            WHERE pair.active IS NULL AND pair.complete = 1 AND cluster2.name IS NULL )
+        UNION
+        (SELECT pair.name1, pair.name1
+            FROM pair
+            JOIN cluster as cluster2
+            ON cluster2.name = pair.name2
+            LEFT JOIN cluster as cluster1
+            ON cluster1.name = pair.name1
+            WHERE pair.active IS NULL AND pair.complete = 1 AND cluster1.name IS NULL);
     
-    
-    INSERT IGNORE INTO clustered_pair (id, name1, name2, probability)
-        SELECT pair.id, cluster1.repr, IF(cluster2.repr IS NULL, pair.name2, cluster2.repr), pair.probability
+    # Build edges between new nodes
+    INSERT IGNORE INTO clustered_pair
+        SELECT pair.id, cluster1.repr, cluster2.repr, pair.probability
         FROM pair
-        JOIN cluster as cluster1
-        ON cluster1.name = pair.name1
-        LEFT JOIN cluster as cluster2
-        ON cluster2.name = pair.name2
-        WHERE pair.active IS NULL AND pair.complete = 1;
-    # now do the same for the right pairs
-    INSERT IGNORE INTO clustered_pair (id, name1, name2, probability)
-        SELECT pair.id, IF(cluster1.repr IS NULL, pair.name1, cluster1.repr), cluster2.repr, pair.probability
-        FROM pair
-        JOIN cluster as cluster2
-        ON cluster2.name = pair.name2
-        LEFT JOIN cluster as cluster1
-        ON cluster1.name = pair.name1
-        WHERE pair.active IS NULL AND pair.complete = 1;
+        JOIN cluster AS cluster1
+        JOIN cluster AS cluster2
+        ON pair.name1 = cluster1.name AND pair.name2 = cluster2.name;
     
     # eliminate self-edges
     DELETE FROM clustered_pair where name1 = name2;
-    
-    # update cluster with the new nodes
-    INSERT IGNORE INTO cluster (name, repr, size)
-        SELECT name, name, 1
-        FROM (
-            SELECT name1 AS name FROM clustered_pair UNION SELECT name2 AS name FROM clustered_pair
-        ) AS names;
-    
-    
-    
+        
     # eliminate any duplicate pairs which were just introduced.
     CALL dropDuplicatePairs();
+
 END //
 DELIMITER ;
 
