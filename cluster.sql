@@ -71,6 +71,10 @@ BEGIN
         name2 VARCHAR(255),
         probability FLOAT);
     
+    CREATE INDEX name1 ON clustered_pair (name1 (6));
+    CREATE INDEX name2 ON clustered_pair (name2 (6));
+    CREATE INDEX probability ON clustered_pair (probability);
+    
     # Create cluster table
     # Each member of a cluster is labeled with the cluster representative.
     # The size gives the size of the cluster when it was merged.
@@ -86,7 +90,7 @@ BEGIN
     VALUES ( clusterCenter, clusterCenter, 1 );
     
     # Degree 1 nodes
-    CALL expandCluster();
+    CALL expandCluster(maxPval);
     
     /*
     # copy over edges of clusterCenter
@@ -116,10 +120,12 @@ DELIMITER ;
 
 /* Expands existing clusters by adding in edges from from pair linking existing clusters to new nodes.
  * New nodes are created as new size=1 clusters
+ *
+ * Only edges with probability < maxPval are considered
  */
 DROP PROCEDURE IF EXISTS expandCluster;
 DELIMITER //
-CREATE PROCEDURE expandCluster()
+CREATE PROCEDURE expandCluster( maxPval FLOAT )
 BEGIN
     
     # Expand nodes by one degree
@@ -131,7 +137,9 @@ BEGIN
             ON cluster1.name = pair.name1
             LEFT JOIN cluster as cluster2
             ON cluster2.name = pair.name2
-            WHERE pair.active IS NULL AND pair.complete = 1 AND cluster2.name IS NULL )
+            WHERE pair.active IS NULL AND pair.complete = 1
+            AND cluster2.name IS NULL
+            AND pair.probability < maxPval )
         UNION
         (SELECT pair.name1, pair.name1
             FROM pair
@@ -139,7 +147,9 @@ BEGIN
             ON cluster2.name = pair.name2
             LEFT JOIN cluster as cluster1
             ON cluster1.name = pair.name1
-            WHERE pair.active IS NULL AND pair.complete = 1 AND cluster1.name IS NULL);
+            WHERE pair.active IS NULL AND pair.complete = 1
+            AND cluster1.name IS NULL
+            AND pair.probability < maxPval);
     
     # Build edges between new nodes
     INSERT IGNORE INTO clustered_pair
@@ -147,7 +157,9 @@ BEGIN
         FROM pair
         JOIN cluster AS cluster1
         JOIN cluster AS cluster2
-        ON pair.name1 = cluster1.name AND pair.name2 = cluster2.name;
+        ON pair.name1 = cluster1.name
+        AND pair.name2 = cluster2.name
+        AND pair.probability < maxPval;
     
     # eliminate self-edges
     DELETE FROM clustered_pair where name1 = name2;
