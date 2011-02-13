@@ -184,6 +184,10 @@ BEGIN
             GROUP BY name1, name2
             HAVING count(*) > 1
         ) AS duplicates INTO nDups;
+
+    -- DEBUG PRINT
+    SELECT nDups as Duplicates;
+
     IF nDups > 0 THEN
         SET @idx=0;
         SET @cur_name1="";
@@ -203,8 +207,13 @@ BEGIN
             ) AS sorted_edges;
             
         #TODO This is poorly optimized. Better version?
-        DELETE FROM clustered_pair WHERE id IN (
-            SELECT id FROM indexed_edges WHERE row_index > 1 );
+        #DELETE FROM clustered_pair WHERE id IN (
+            #SELECT id FROM indexed_edges WHERE row_index > 1 );
+	DELETE FROM clustered_pair
+		USING clustered_pair INNER JOIN indexed_edges 
+		ON clustered_pair.id = indexed_edges.id
+		WHERE indexed_edges.row_index > 1;
+
     END IF;
     
     /*
