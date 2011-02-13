@@ -6,15 +6,15 @@
 # Called from alig (production) or aligTest (testing) databases
 
 
-/* initClusters(maxPval FLOAT)
+/* initClusters()
  * 
  * Initializes clusters from the pair table, creating the cluster and clustered_pair tables.
- * Every node in pair because a cluster of size one.
- * Every edge in pair with probability below maxPval because an edge between clusters.
+ * Every node in pair becomes a cluster of size one.
+ * Every edge in pair becomes an edge between clusters.
  */
 DROP PROCEDURE IF EXISTS initClusters;
 DELIMITER //
-CREATE PROCEDURE initClusters(maxPval FLOAT)
+CREATE PROCEDURE initClusters()
 BEGIN
     # Create clustered_pair table
     # clustered_pair holds the edges in the clustered graph
@@ -26,7 +26,7 @@ BEGIN
         probability FLOAT);
     
     # copy over all completed pairs
-    INSERT INTO clustered_pair SELECT id, name1, name2, probability FROM pair WHERE active IS NULL AND complete = 1 AND probability < maxPval;
+    INSERT INTO clustered_pair SELECT id, name1, name2, probability FROM sigPair;
     
     # Create cluster table
     # Each member of a cluster is labeled with the cluster representative.
@@ -50,17 +50,17 @@ END //
 DELIMITER ;
 
 
-/* initClusters(maxPval FLOAT)
+/* initClusters()
  * 
  * Initializes clusters from the pair table, creating the cluster and clustered_pair tables.
- * Every node in pair because a cluster of size one.
- * Every edge in pair with probability below maxPval because an edge between clusters.
+ * Every node in pair becomes a cluster of size one.
+ * Every edge in pair becomes an edge between clusters.
  *
  * Only conciders nodes within distance 2 of clusterCenter
  */
 DROP PROCEDURE IF EXISTS initClustersAroundName;
 DELIMITER //
-CREATE PROCEDURE initClustersAroundName(maxPval FLOAT, clusterCenter VARCHAR(255) )
+CREATE PROCEDURE initClustersAroundName( clusterCenter VARCHAR(255) )
 BEGIN
     # Create clustered_pair table
     # clustered_pair holds the edges in the clustered graph
@@ -90,7 +90,7 @@ BEGIN
     VALUES ( clusterCenter, clusterCenter, 1 );
     
     # Degree 1 nodes
-    CALL expandCluster(maxPval);
+    CALL expandCluster();
     
     /*
     # copy over edges of clusterCenter
@@ -125,41 +125,38 @@ DELIMITER ;
  */
 DROP PROCEDURE IF EXISTS expandCluster;
 DELIMITER //
-CREATE PROCEDURE expandCluster( maxPval FLOAT )
+CREATE PROCEDURE expandCluster()
 BEGIN
     
     # Expand nodes by one degree
     #TODO Could this give incorrect size=1? Probably consistent if input is consistent (eg all repr in cluster have a name=repr row)
     INSERT IGNORE INTO cluster (name, repr)
-        (SELECT pair.name2, pair.name2
-            FROM pair
+        (SELECT sigPair.name2, sigPair.name2
+            FROM sigPair
             JOIN cluster as cluster1
-            ON cluster1.name = pair.name1
+            ON cluster1.name = sigPair.name1
             LEFT JOIN cluster as cluster2
-            ON cluster2.name = pair.name2
-            WHERE pair.active IS NULL AND pair.complete = 1
-            AND cluster2.name IS NULL
-            AND pair.probability < maxPval )
+            ON cluster2.name = sigPair.name2
+            WHERE cluster2.name IS NULL
+            )
         UNION
-        (SELECT pair.name1, pair.name1
-            FROM pair
+        (SELECT sigPair.name1, sigPair.name1
+            FROM sigPair
             JOIN cluster as cluster2
-            ON cluster2.name = pair.name2
+            ON cluster2.name = sigPair.name2
             LEFT JOIN cluster as cluster1
-            ON cluster1.name = pair.name1
-            WHERE pair.active IS NULL AND pair.complete = 1
-            AND cluster1.name IS NULL
-            AND pair.probability < maxPval);
+            ON cluster1.name = sigPair.name1
+            WHERE cluster1.name IS NULL
+	);
     
     # Build edges between new nodes
     INSERT IGNORE INTO clustered_pair
-        SELECT pair.id, cluster1.repr, cluster2.repr, pair.probability
-        FROM pair
+        SELECT sigPair.id, cluster1.repr, cluster2.repr, sigPair.probability
+        FROM sigPair
         JOIN cluster AS cluster1
         JOIN cluster AS cluster2
-        ON pair.name1 = cluster1.name
-        AND pair.name2 = cluster2.name
-        AND pair.probability < maxPval;
+        ON sigPair.name1 = cluster1.name
+        AND sigPair.name2 = cluster2.name;
     
     # eliminate self-edges
     DELETE FROM clustered_pair where name1 = name2;
@@ -194,7 +191,7 @@ BEGIN
         
         #Use lots of temp tables, since nested subqueries are buggy?
         DROP TABLE IF EXISTS indexed_edges;
-        CREATE TEMPORARY TABLE indexed_edges
+        CREATE TABLE indexed_edges
             SELECT id, name1, name2, probability,
                 IF(@cur_name1 != name1 OR @cur_name2 != name2, @idx:=1, @idx:=@idx+1) AS row_index,
                 @cur_name1:=sorted_edges.name1,
@@ -253,20 +250,20 @@ BEGIN
 
     #Create temporary table with all the edges to @rep or @merge
     DROP TABLE IF EXISTS rep_pair;
-    CREATE TEMPORARY TABLE rep_pair SELECT id, name2 AS name, probability FROM clustered_pair WHERE name1 = @rep;
+    CREATE TABLE rep_pair SELECT id, name2 AS name, probability FROM clustered_pair WHERE name1 = @rep;
     INSERT INTO rep_pair SELECT id, name1, probability FROM clustered_pair WHERE name2 = @rep;
     #CREATE OR REPLACE VIEW rep_pair AS SELECT id, name2 AS name, probability FROM clustered_pair WHERE name1 = @rep UNION SELECT id, name1 AS name, probability FROM clustered_pair WHERE name2 = @rep;
     
     #Create temp table with the edges we are going to keep, eg those that have minimal probability
     #TODO BUG: If one node has edges to both @rep and @merge with equal probability
     #DROP TABLE IF EXISTS min_prob;
-    #CREATE TEMPORARY TABLE min_prob AS SELECT name, MIN(probability) AS min_prob FROM rep_pair GROUP BY name;
+    #CREATE TABLE min_prob AS SELECT name, MIN(probability) AS min_prob FROM rep_pair GROUP BY name;
     
 
         
     # This complecated query deletes duplicate edges arising from the merge
-    # Table r lists the edges to the cluster, sorted by name and probability
-    # Table r2 adds a row_index, which restarts at 1 for each name
+    # Table localEdges lists the edges to the cluster, sorted by name and probability
+    # Table localEdgesI adds a row_index, which restarts at 1 for each name
     # We only delete rows with row_index>1, ie duplicate edges
     SET @idx=0;
     SET @cur_name="";
@@ -275,34 +272,34 @@ BEGIN
     DELETE FROM clustered_pair WHERE id IN (
         SELECT id
         FROM (
-            SELECT r.id, r.name, r.probability,
-                IF(@cur_name != r.name, @idx:=1, @idx:=@idx+1) AS row_index,
-                @cur_name:=r.name
+            SELECT localEdges.id, localEdges.name, localEdges.probability,
+                IF(@cur_name != localEdges.name, @idx:=1, @idx:=@idx+1) AS row_index,
+                @cur_name:=localEdges.name
             FROM (
                 SELECT id, name, probability
                 FROM rep_pair
                 ORDER BY name, probability
             ) AS r
             HAVING row_index > 1
-        ) AS r2
+        ) AS localEdgesI
     );
     */
     
     #Use lots of temp tables, since nested subqueries are buggy?
-    DROP TABLE IF EXISTS r2;
-    CREATE TEMPORARY TABLE r2
-        SELECT r.id, r.name, r.probability,
-            IF(@cur_name != r.name, @idx:=1, @idx:=@idx+1) AS row_index,
-            @cur_name:=r.name
+    DROP TABLE IF EXISTS localEdgesI;
+    CREATE TABLE localEdgesI
+        SELECT localEdges.id, localEdges.name, localEdges.probability,
+            IF(@cur_name != localEdges.name, @idx:=1, @idx:=@idx+1) AS row_index,
+            @cur_name:= localEdges.name
         FROM (
             SELECT id, name, probability
             FROM rep_pair
             ORDER BY name, probability
-        ) AS r;
+        ) AS localEdges;
     
     #TODO This is poorly optimized. Better version?
     DELETE FROM clustered_pair WHERE id IN (
-        SELECT id FROM r2 WHERE row_index > 1 );
+        SELECT id FROM localEdgesI WHERE row_index > 1 );
     
     #DELETE FROM clustered_pair WHERE id IN ( SELECT id FROM rep_pair JOIN min_prob ON rep_pair.name = min_prob.name AND rep_pair.probability != min_prob.min_prob );
 
@@ -341,7 +338,7 @@ DELIMITER ;
  */
 DROP PROCEDURE IF EXISTS main;
 DELIMITER //
-CREATE PROCEDURE main(maxComponents INT, maxPval FLOAT)
+CREATE PROCEDURE main(maxComponents INT)
 BEGIN
     DECLARE startTime DATETIME;
     DECLARE endTime DATETIME;
@@ -355,7 +352,7 @@ BEGIN
     );
 
 
-    CALL initClusters(maxPval);
+    CALL initClusters();
         
     SET @pVal = -1;
     SET @numClusters = maxComponents;
