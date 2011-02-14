@@ -118,11 +118,9 @@ BEGIN
 END //
 DELIMITER ;
 
--- Expands existing clusters by adding in edges from from pair linking existing clusters to new nodes.
+-- Expands existing clusters by adding in edges from from pair linking existing
+-- clusters to new nodes.
 -- New nodes are created as new size=1 clusters
--- 
--- Only edges with probability < maxPval are considered
--- 
 DROP PROCEDURE IF EXISTS expandCluster;
 DELIMITER //
 CREATE PROCEDURE expandCluster()
@@ -147,7 +145,7 @@ BEGIN
             LEFT JOIN cluster as cluster1
             ON cluster1.name = sigPair.name1
             WHERE cluster1.name IS NULL
-	);
+        );
     
     -- Build edges between new nodes
     INSERT IGNORE INTO clustered_pair
@@ -209,10 +207,10 @@ BEGIN
         -- TODO This is poorly optimized. Better version?
         -- DELETE FROM clustered_pair WHERE id IN (
             -- SELECT id FROM indexed_edges WHERE row_index > 1 );
-	DELETE FROM clustered_pair
-		USING clustered_pair INNER JOIN indexed_edges 
-		ON clustered_pair.id = indexed_edges.id
-		WHERE indexed_edges.row_index > 1;
+        DELETE FROM clustered_pair
+            USING clustered_pair INNER JOIN indexed_edges 
+            ON clustered_pair.id = indexed_edges.id
+            WHERE indexed_edges.row_index > 1;
 
     END IF;
     
@@ -307,8 +305,10 @@ BEGIN
         ) AS localEdges;
     
     -- TODO This is poorly optimized. Better version?
-    DELETE FROM clustered_pair WHERE id IN (
-        SELECT id FROM localEdgesI WHERE row_index > 1 );
+    DELETE FROM clustered_pair
+        USING clustered_pair INNER JOIN localEdgesI
+        ON clustered_pair.id = localEdgesI.id
+        WHERE localEdgesI.row_index > 1;
     
     -- DELETE FROM clustered_pair WHERE id IN ( SELECT id FROM rep_pair JOIN min_prob ON rep_pair.name = min_prob.name AND rep_pair.probability != min_prob.min_prob );
 

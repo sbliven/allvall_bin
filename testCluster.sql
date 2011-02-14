@@ -25,7 +25,7 @@ BEGIN
         id BIGINT(20) UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         name1 VARCHAR(255),
         name2 VARCHAR(255),
-        probability FLOAT) UNSIGNED DEFAULT 1);
+        probability FLOAT);
     
     INSERT INTO sigPair (name1, name2, probability) VALUES ( "A", "B", 0 );
     INSERT INTO sigPair (name1, name2, probability) VALUES ( "A", "C", 1.0E-9 );
