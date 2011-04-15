@@ -4,7 +4,6 @@ Create output files for cytoscape from the All-vs-all mysql database
 @author Spencer Bliven <sbliven@ucsd.edu>
 """
 
-from __future__ import print_function
 import sys
 import os
 import optparse
